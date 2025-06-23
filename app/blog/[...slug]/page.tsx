@@ -1,10 +1,19 @@
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import Callout from '@/components/ui/Callout'
-import { getPostBySlug } from '@/lib/postCache'
+import { getPostBySlug, getAllPostsMeta } from '@/lib/postCache'
 
 // 获取项目根目录下的 posts 文件夹的绝对路径。
 
 const components = { Callout }
+
+export async function generateStaticParams() {
+  const posts = getAllPostsMeta() // 从缓存获取所有文章元数据
+
+  // 将文章元数据转换为 generateStaticParams 需要的格式
+  return posts.map((post) => ({
+    slug: post.slug.split('/'), // 将 'devlog/my-post' 这样的 slug 转换为 ['devlog', 'my-post']
+  }))
+}
 
 export default async function BlogDocPage({
   params,
