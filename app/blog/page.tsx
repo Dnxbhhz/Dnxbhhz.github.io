@@ -1,25 +1,39 @@
+import Link from 'next/link'
+import { getAllPostsMeta } from '@/lib/postCache'
+
 export default function Blog() {
+  const allPosts = getAllPostsMeta()
+
   return (
     <div className="container mx-auto max-w-3xl px-4 py-8">
-      <h1 className="text-4xl font-bold tracking-tight text-primary">
+      <h1 className="mb-8 text-4xl font-bold tracking-tight text-primary">
         我的博客
       </h1>
-      <p className="mt-4 text-muted-foreground">
-        欢迎来到我的个人博客。这里会记录我的学习、思考和一些技术分享。
-      </p>
-      <div className="mt-8">
-        {/* 在这里，您可以映射您的博客文章列表 */}
-        <div className="py-4">
-          <h2 className="text-2xl font-semibold text-accent-foreground">
-            博客文章标题
-          </h2>
-          <p className="mt-2 text-muted-foreground">这是博客文章的摘要...</p>
-          <a href="#" className="mt-2 inline-block text-primary">
-            阅读更多 &rarr;
-          </a>
-        </div>
-        {/* 更多文章... */}
-      </div>
+
+      <ul className="space-y-8">
+        {allPosts.map(({ slug, title, date, summary }) => (
+          <li
+            key={slug}
+            className="rounded-lg border p-6 transition-all hover:bg-secondary">
+            <Link href={`/blog/${slug}`} className="block">
+              <p className="text-sm text-muted-foreground">
+                {new Date(date).toLocaleDateString('zh-CN', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-accent-foreground">
+                {title}
+              </h2>
+              <p className="mt-3 text-muted-foreground">{summary}</p>
+              <span className="mt-4 inline-block font-medium text-primary">
+                阅读更多 &rarr;
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

@@ -10,6 +10,14 @@ export default function Home() {
           <br />
           在这里我会分享我的项目和博客。
         </p>
+
+        <div className="prose dark:prose-invert">
+          <h1>Prose 测试</h1>
+          <p>这是一段测试文本。</p>
+          <pre>
+            <code>{`console.log('hello world')`}</code>
+          </pre>
+        </div>
       </div>
     </section>
   )

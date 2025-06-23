@@ -1,0 +1,46 @@
+---
+title: '个人网站开发日志'
+date: '2025-04-23'
+summary: 'nextjs+mdx开发个人博客网站'
+---
+
+## 初始化项目
+
+安装 nextjs，直接看官网不赘述[nextjs](https://nextjs.org/docs/app/getting-started/installation#automatic-installation)。
+
+UI 方面采用的是[Magic UI](https://magicui.design/docs/components) + [shadcn](https://ui.shadcn.com/)。
+
+因为之前从来没用用过 react，第一次接触`shadcn`这样的组件库感到很新奇。导入组件跟常用的 AntDesigin 和 ElementUI 不太一样，需要哪个组件就安装哪个组件，因此最开始博主还疑惑，为什么已经安装了组件库，导入时却报错未找到模块？而常规的组件库则是安装所有的组件，打包时移除未被使用的模块。
+
+虽然使用时需要先安装，可能对于开发过程会有点麻烦，但是有个好处就是，可以直接修改组件，实现个性化定制！不需要二次封装，比较自由。博主突然有点爱上 react 的生态了！
+
+关于 CI/CD 则采用的是 git Actions，由于 nextjs 是服务端渲染，需要在
+
+并且因为使用的是 pnpm，需要在 settings 中需要修改默认的 nextjs.yml 文件，否则会 build 失败。
+
+就这样，初始框架就搭好了！
+
+## 展示 markdown 文档
+
+### 技术选型：
+
+- **@next/mdx**：MDX 支持 Next.js 的官方插件，并且可以插入 react 组件。
+- **next-mdx-remote**：允许你将 .mdx 内容从 **远程或本地文件**中读取，并**在运行时**渲染，而不是构建时就固定写死。
+- **gray-matter**：从 Markdown 文件中解析出 **frontmatter** 和正文内容
+- **主题样式系统**：用 **Tailwind Typography**为 markdown 优化样式。
+
+### 路由系统
+
+首先，nextjs 的路由系统是基于**文件系统路由**，因此如果我们需要新增一个路由的话，直接在 app 下创建一个文件夹就可以了。其次，因为是要做博客网站，所以动态路由也是必不可少的。
+
+我们可以通过 params 获取当前动态路由，nextjs 在构建时会自动注入。
+
+### 格式化内容
+
+**gray-matter**格式化 markdown 文件内容，因此我们可以获取到文档的元信息和文档具体内容，拿到这些信息就能开始渲染文档了。
+
+使用**next-mdx-remote**渲染我们的 mdx 文件，并且还能注册我们的 react 组件直接展示在 markdown 文件里
+
+使用**Tailwind Typography**优化我们的文档样式，在这里博主在 cursor 上栽了一个大坑，习惯用 AI 的博主用 cursor 生成的代码，结果始终不能正常显示样式，最后发现！！在 css 里没有注册 Typography！博主自己去看了眼官网才发现，看来还是不能太依赖 AI！除此之外，需要在 dom 上添加`prose`类，就能正常显示了。
+
+以上就是我的个人网站开发日志啦，中间虽然遇到了不少问题，也是我第一次接触 nextjs 和上手写 react，感觉还是挺新奇的！
