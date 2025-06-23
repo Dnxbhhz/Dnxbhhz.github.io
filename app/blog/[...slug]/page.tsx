@@ -9,7 +9,7 @@ const components = { Callout }
 export default async function BlogDocPage({
   params,
 }: {
-  params: { slug: string[] }
+  params: Promise<{ slug: string[] }>
 }) {
   const { slug } = await params
   const slugArr = Array.isArray(slug) ? slug : [slug]
