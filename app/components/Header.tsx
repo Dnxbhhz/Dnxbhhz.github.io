@@ -1,7 +1,7 @@
 'use client'
 
 import siteMetadata from '@/data/siteMetadata'
-import Link from './Link'
+import Link from '../../components/Link'
 import { AnimatedGradientText } from '@/components/magicui/animated-gradient-text'
 import { Dock, DockIcon } from '@/components/magicui/dock'
 import { HomeIcon, MailIcon, PencilIcon } from 'lucide-react'
@@ -49,9 +49,9 @@ export default function Header() {
     <header className={headerClass}>
       <Link href="/" aria-label={siteMetadata.headerTitle}>
         <AnimatedGradientText
-          speed={2}
-          colorFrom="#4ade80"
-          colorTo="#06b6d4"
+          speed={1}
+          colorFrom="oklch(71.4% 0.203 305.504)"
+          colorTo="#5046e6"
           className="text-2xl font-semibold tracking-tight">
           {siteMetadata.headerTitle}
         </AnimatedGradientText>

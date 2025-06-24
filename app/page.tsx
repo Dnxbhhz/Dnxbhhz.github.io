@@ -1,24 +1,15 @@
+import { Marquee3D } from './components/Techs'
+import Intro from './components/Intro'
+
 export default function Home() {
   return (
-    <section className="container grid items-center gap-6 px-4 pb-8 pt-6 md:py-10">
-      <div className="flex max-w-[980px] flex-col items-start gap-2">
-        <h1 className="text-3xl font-extrabold leading-tight tracking-tighter md:text-4xl">
-          欢迎来到我的网站
-        </h1>
-        <p className="max-w-[700px] text-lg text-muted-foreground">
-          这是一个使用 Next.js 和 magic-ui 构建的现代化网站。
-          <br />
-          在这里我会分享我的项目和博客。
-        </p>
-
-        <div className="prose dark:prose-invert">
-          <h1>Prose 测试</h1>
-          <p>这是一段测试文本。</p>
-          <pre>
-            <code>{`console.log('hello world')`}</code>
-          </pre>
-        </div>
+    <div className="h-full px-4 w-full flex flex-row">
+      <div className="w-1/2 h-full relative flex items-center justify-center">
+        {/* {背景色块} */}
+        <Intro></Intro>
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-gradient-to-br from-purple-400 via-blue-400 to-cyan-300 opacity-40 blur-2xl"></div>
       </div>
-    </section>
+      <Marquee3D></Marquee3D>
+    </div>
   )
 }
