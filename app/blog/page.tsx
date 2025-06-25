@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getAllPostsMeta } from '@/lib/postCache'
+import React from 'react'
 
 export default function Blog() {
   const allPosts = getAllPostsMeta()

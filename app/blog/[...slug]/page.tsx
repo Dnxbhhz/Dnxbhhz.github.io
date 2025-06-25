@@ -1,3 +1,4 @@
+import React from 'react'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import Callout from '@/components/ui/Callout'
 import { getPostBySlug, getAllPostsMeta } from '@/lib/postCache'
