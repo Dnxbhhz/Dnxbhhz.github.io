@@ -6,7 +6,6 @@ import { useState, useEffect, useLayoutEffect } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
-  Menu,
   ChevronRight as ChevronRightIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
