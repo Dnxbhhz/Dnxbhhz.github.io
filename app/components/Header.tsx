@@ -52,7 +52,7 @@ export default function Header() {
           speed={1}
           colorFrom="oklch(71.4% 0.203 305.504)"
           colorTo="#5046e6"
-          className="text-2xl font-semibold tracking-tight">
+          className="text-3xl font-semibold tracking-tight">
           {siteMetadata.headerTitle}
         </AnimatedGradientText>
       </Link>

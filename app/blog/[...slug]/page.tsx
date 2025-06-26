@@ -2,10 +2,37 @@ import React from 'react'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import Callout from '@/components/ui/Callout'
 import { getPostBySlug, getAllPostsMeta } from '@/lib/postCache'
+import InlineCode from '@/app/blog/components/InlineCode'
+import dynamic from 'next/dynamic'
+// import CodeBlock from '@/app/blog/components/CodeBlock'
+const CodeBlockServer = dynamic(
+  () => import('@/app/blog/components/CodeBlockServer'),
+  { ssr: true },
+)
 
 // 获取项目根目录下的 posts 文件夹的绝对路径。
 
-const components = { Callout }
+const components = {
+  Callout,
+  code: (props: React.HTMLAttributes<HTMLElement>) => <InlineCode {...props} />,
+  pre: async (props: React.HTMLAttributes<HTMLElement>) => {
+    let code = ''
+    let language = ''
+    if (
+      props.children &&
+      typeof props.children === 'object' &&
+      'props' in props.children
+    ) {
+      const codeElement = props.children as React.ReactElement<{
+        className?: string
+        children?: string
+      }>
+      code = codeElement.props.children || ''
+      language = codeElement.props.className?.replace('language-', '') || ''
+    }
+    return <CodeBlockServer code={code} language={language} />
+  },
+}
 
 export async function generateStaticParams() {
   const posts = getAllPostsMeta() // 从缓存获取所有文章元数据

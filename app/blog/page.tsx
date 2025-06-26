@@ -6,7 +6,7 @@ export default function Blog() {
   const allPosts = getAllPostsMeta()
 
   return (
-    <div className="container mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-3xl px-4">
       <h1 className="mb-8 text-4xl font-bold tracking-tight text-primary">
         我的博客
       </h1>

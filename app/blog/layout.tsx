@@ -8,11 +8,10 @@ export default function BlogLayout({
   children: React.ReactNode
 }) {
   const tree = getDocTree()
-
   return (
     <div className="flex min-h-screen">
       <Sidebar tree={tree} />
-      <main className="flex-1 pt-22 min-w-0">{children}</main>
+      <main className="flex-1 pt-5 min-w-0">{children}</main>
     </div>
   )
 }

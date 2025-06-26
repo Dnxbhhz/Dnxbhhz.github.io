@@ -4,9 +4,11 @@ import { DocNode } from '@/lib/getDocTree'
 import ActiveLink from './ActiveLink'
 import { useState, useEffect, useLayoutEffect } from 'react'
 import {
-  ChevronLeft,
-  ChevronRight,
+  // ChevronLeft,
+  // ChevronRight,
   ChevronRight as ChevronRightIcon,
+  BookOpen,
+  Menu,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import Link from 'next/link'
 
 function Tree({
   tree,
@@ -111,18 +114,20 @@ function Tree({
         node.type === 'folder' ? (
           <li key={node.path} className="mb-2 w-full">
             <div
-              className="flex items-center gap-1 font-bold text-sm text-muted-foreground mb-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent w-full"
+              className="flex items-center justify-between gap-1 font-bold text-base text-muted-foreground mb-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent w-full"
               onClick={() => toggleNode(node.path)}>
+              <span className="truncate flex-1 font-extrabold text-lg">
+                {node.name}
+              </span>
               <div
                 className={`shrink-0 transition-transform duration-200 ${
                   expandedNodes.has(node.path) ? 'rotate-90' : ''
                 }`}>
                 <ChevronRightIcon
-                  size={14}
-                  className="shrink-0 transition-transform"
+                  size={18}
+                  className="shrink-0 transition-transform text-[color:var(--my-purple)]"
                 />
               </div>
-              <span className="truncate flex-1">{node.name}</span>
             </div>
             <div
               className={`grid transition-all duration-300 ease-out w-full ${
@@ -214,8 +219,13 @@ export default function Sidebar({ tree }: SidebarProps) {
             className={`transition-all duration-300 overflow-hidden ${
               isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
             }`}>
-            <h2 className="text-lg font-semibold whitespace-nowrap">
-              文档导航
+            <h2 className="text-lg font-semibold whitespace-nowrap flex items-center gap-2">
+              <BookOpen size={16} className="text-[color:var(--my-purple)]" />
+              <Link
+                href="/blog"
+                className="hover:underline focus:underline outline-none">
+                文档导航
+              </Link>
             </h2>
           </div>
           <Tooltip>
@@ -225,11 +235,7 @@ export default function Sidebar({ tree }: SidebarProps) {
                 size="sm"
                 onClick={toggleCollapsed}
                 className={`${isCollapsed ? 'mx-auto' : 'ml-auto'}`}>
-                {isCollapsed ? (
-                  <ChevronRight size={16} />
-                ) : (
-                  <ChevronLeft size={16} />
-                )}
+                <Menu size={18} className="text-[color:var(--my-purple)]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">
