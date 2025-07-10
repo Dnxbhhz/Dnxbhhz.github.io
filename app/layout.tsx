@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import Header from '@/app/components/Header'
+import { AntdRegistry } from '@ant-design/nextjs-registry'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -28,14 +29,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning={true} className="h-full">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex h-full flex-col`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange>
-          <Header />
-          <main className="pt-22">{children}</main>
-        </ThemeProvider>
+        <AntdRegistry>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange>
+            <Header />
+            <main className="pt-22 w-full">{children}</main>
+          </ThemeProvider>
+        </AntdRegistry>
       </body>
     </html>
   )
