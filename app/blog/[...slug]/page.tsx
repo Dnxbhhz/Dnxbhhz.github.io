@@ -1,10 +1,11 @@
 import React from 'react'
-import { MDXRemote } from 'next-mdx-remote/rsc'
+import { compileMDX } from 'next-mdx-remote/rsc'
 import Callout from '@/components/ui/Callout'
 import { getPostBySlug, getAllPostsMeta } from '@/lib/postCache'
 import InlineCode from '@/app/blog/components/InlineCode'
 import dynamic from 'next/dynamic'
-// import CodeBlock from '@/app/blog/components/CodeBlock'
+import remarkGfm from 'remark-gfm'
+
 const CodeBlockServer = dynamic(
   () => import('@/app/blog/components/CodeBlockServer'),
   { ssr: true },
@@ -55,6 +56,16 @@ export default async function BlogDocPage({
   if (!post) throw new Error('Not found: ' + slugStr)
 
   const { content, title, date } = post
+  const mdx = await compileMDX({
+    source: content,
+    options: {
+      mdxOptions: {
+        remarkPlugins: [remarkGfm],
+      },
+    },
+    components,
+  })
+
   return (
     <article className="prose prose-zinc mx-auto max-w-3xl dark:prose-invert">
       <h1 className="text-4xl font-extrabold tracking-tight">{title}</h1>
@@ -66,7 +77,7 @@ export default async function BlogDocPage({
             day: 'numeric',
           })}
       </p>
-      <MDXRemote source={content} components={components} />
+      {mdx.content}
     </article>
   )
 }
