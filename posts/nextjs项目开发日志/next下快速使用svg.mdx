@@ -1,0 +1,177 @@
+---
+title: 'next下快速使用svg'
+date: '2025-07-26'
+summary: 'next下快速使用svg'
+---
+
+如果我们想要采用一种非常高效的 svg 管理方式，通常会采取将他们合成为一个`<symbol>`集合，在页面中通过`<use> `标签引用，减少请求、提升性能。
+
+在 webpack 或者 vite 项目中，我们可以使用一些 loader 来处理，但是在 nextjs 中,暂时无法支持 Webpack 的 JS 插件 / loader API。
+
+由于缺少 loader 机制，我们需要在构建阶段手动或借助脚本生成 sprite.svg 文件，再在前端通过 `<use xlink:href="/sprite.svg#icon-name"> `方式引用。
+
+这里用的是 svgstore，它可以：
+
+1. 合并 SVG 文件：将多个独立的 SVG 图标文件合并成一个单一的 SVG sprite 文件
+
+1. 生成唯一 ID：为每个图标分配唯一的 ID（如代码中的 icon- + 文件名）
+
+1. 内联模式：支持内联模式，生成的 sprite 可以直接嵌入到 HTML 中
+
+```js
+// scripts/generate-sprite.js
+const fs = require('fs')
+const path = require('path')
+const svgstore = require('svgstore')
+
+const sprite = svgstore({ inline: true })
+
+const iconsDir = path.resolve(__dirname, '../src/assets/icons')
+
+const outPath = path.resolve(__dirname, '../public/sprite.svg')
+
+function findSvgFiles(dir) {
+  let results = []
+  const list = fs.readdirSync(dir)
+
+  for (const file of list) {
+    const fullPath = path.join(dir, file)
+    const stat = fs.statSync(fullPath)
+
+    if (stat.isDirectory()) {
+      results = results.concat(findSvgFiles(fullPath))
+    } else if (stat.isFile() && fullPath.endsWith('.svg')) {
+      results.push(fullPath)
+    }
+  }
+
+  return results
+}
+
+const svgFiles = findSvgFiles(iconsDir)
+
+svgFiles.forEach((filePath) => {
+  const id = 'icon-' + path.basename(filePath, '.svg')
+  const content = fs.readFileSync(filePath, 'utf-8')
+  sprite.add(id, content)
+})
+
+fs.writeFileSync(outPath, sprite.toString())
+console.log(
+  `✅ Generated sprite.svg with ${svgFiles.length} icons to ${outPath}`,
+)
+```
+
+生成完 SvgSprite 后，我们还需要将它加载在项目中，写一个组件来完成：
+
+1. 动态加载 SVG Sprite 文件：在组件挂载时，通过 fetch('/sprite.svg') 获取由 generate-sprite.js 脚本生成的 SVG sprite 文件
+
+1. 将 Sprite 注入到 DOM：将获取到的 SVG sprite 内容通过 dangerouslySetInnerHTML 注入到页面中
+
+1. 隐藏显示：使用 style={{ display: 'none' }} 将包含 sprite 的 div 隐藏起来，这样 sprite 中的图标定义就存在于 DOM 中，但不会显示出来
+
+```tsx
+// src/components/SvgSprite.tsx
+'use client'
+import React, { useEffect, useState } from 'react'
+
+const SvgSprite: React.FC = () => {
+  const [spriteContent, setSpriteContent] = useState<string>('')
+
+  useEffect(() => {
+    fetch('/sprite.svg')
+      .then((res) => res.text())
+      .then(setSpriteContent)
+      .catch(console.error)
+  }, [])
+
+  if (!spriteContent) return null
+
+  return (
+    <div
+      style={{ display: 'none' }}
+      dangerouslySetInnerHTML={{ __html: spriteContent }}
+    />
+  )
+}
+
+export default SvgSprite
+```
+
+最终使用：
+
+```tsx
+import React from 'react'
+import IConfigProvider from './IConfigProvider'
+import SvgSprite from '../components/SvgSprite'
+import './globals.css'
+
+const RootLayout = ({ children }: React.PropsWithChildren) => (
+  <html lang="zh">
+    <body id={'root'}>
+      <SvgSprite />
+      <IConfigProvider>{children}</IConfigProvider>
+    </body>
+  </html>
+)
+
+export default RootLayout
+```
+
+接下来就可以写一个 svg 的组件了：
+
+```tsx
+// src/components/SvgIcon.tsx
+'use client'
+
+import React from 'react'
+
+interface SvgIconProps {
+  iconClass: string
+  className?: string
+  size?: number | string
+  color?: string
+}
+
+function isExternal(path: string) {
+  return /^(https?:)?\/\//.test(path)
+}
+
+const SvgIcon: React.FC<SvgIconProps> = ({
+  iconClass,
+  className = '',
+  size = '1em',
+  color = 'currentColor',
+}) => {
+  const isExt = isExternal(iconClass)
+
+  if (isExt) {
+    const style: React.CSSProperties = {
+      width: size,
+      height: size,
+      backgroundColor: color,
+      mask: `url(${iconClass}) no-repeat center`,
+      WebkitMask: `url(${iconClass}) no-repeat center`,
+      maskSize: 'cover',
+      WebkitMaskSize: 'cover',
+      display: 'inline-block',
+    }
+
+    return <span className={`svg-external-icon ${className}`} style={style} />
+  }
+
+  return (
+    <svg
+      className={`svg-icon ${className}`}
+      aria-hidden="true"
+      width={size}
+      height={size}
+      fill={color}
+      stroke={color}>
+      <use xlinkHref={`#icon-${iconClass}`} />
+    </svg>
+  )
+}
+
+export default SvgIcon
+```
