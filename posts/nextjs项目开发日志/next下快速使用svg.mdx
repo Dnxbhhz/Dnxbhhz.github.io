@@ -1,7 +1,7 @@
 ---
 title: 'next下快速使用svg'
 date: '2025-07-26'
-summary: 'next下快速使用svg'
+summary: 'nextjs项目部署流程'
 ---
 
 如果我们想要采用一种非常高效的 svg 管理方式，通常会采取将他们合成为一个`<symbol>`集合，在页面中通过`<use> `标签引用，减少请求、提升性能。
@@ -68,7 +68,7 @@ console.log(
 
 1. 将 Sprite 注入到 DOM：将获取到的 SVG sprite 内容通过 dangerouslySetInnerHTML 注入到页面中
 
-1. 隐藏显示：使用 style={{ display: 'none' }} 将包含 sprite 的 div 隐藏起来，这样 sprite 中的图标定义就存在于 DOM 中，但不会显示出来
+1. 隐藏显示：使用`style={{ display: 'none' }}`将包含 sprite 的 div 隐藏起来，这样 sprite 中的图标定义就存在于 DOM 中，但不会显示出来
 
 ```tsx
 // src/components/SvgSprite.tsx
