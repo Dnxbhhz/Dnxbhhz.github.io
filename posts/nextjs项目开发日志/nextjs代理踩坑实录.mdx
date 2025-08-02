@@ -1,0 +1,48 @@
+---
+title: 'nextjs代理踩坑实录'
+date: '2025-07-26'
+summary: '如果你遇到fetch等请求不能正常代理，请检查你的basePath!!!'
+---
+
+一般情况下，我们使用 axios 来封装我们的 http 请求，使用的时候：
+
+```js
+axios.get('/api/user')
+```
+
+此时，你的实际请求也是 localhost:port/api/user。
+
+但是，在 nextjs 的项目中，你设置了 basepath 后，直接发起 fetch 请求：
+
+```js
+fetch('/api/user')
+```
+
+处理方式却和页面上下文有关，假设你的页面是 `https://example.com/myapp/page`，那么浏览器会解析相对路径，最终请求的是：`https://example.com/myapp/api/user`，这是浏览器自动把 basePath（当前路径）拼上去的行为，而不是 fetch 自己加上去的。而且在开发环境中，你查看 network 面板，并不会发现你的请求上带了 basePath!!! 这是最坑的一点！
+
+总而言之:
+
+- axios 只执行你写的 URL，不会“猜”你项目设置了什么 `basePath`；
+- fetch 请求如果是相对路径，由浏览器环境解析，可能自动加上了 basePath（取决于页面路径）；
+
+如果你想按照普通的项目那样代理的请求，不希望请求带上 basepath,可以在 next.config.js 上写上 basePath: false:
+
+```js
+module.exports = {
+  basePath: '/docs',
+
+  async rewrites() {
+    return [
+      {
+        source: '/with-basePath', // automatically becomes /docs/with-basePath
+        destination: '/another', // automatically becomes /docs/another
+      },
+      {
+        source: '/without-basePath',
+        destination: 'https://example.com',
+        basePath: false,
+      },
+    ]
+  },
+}
+```
