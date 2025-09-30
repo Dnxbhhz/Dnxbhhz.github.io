@@ -1,0 +1,222 @@
+---
+title: '多模态场景下tts功能实现'
+date: '2025-09-30'
+summary: '流式返回文本时，发起tts请求，并实现流式播放，及时打断'
+
+---
+
+## 整体流程概览：
+
+```
+网络请求 → 流读取 → 数据对齐 → 格式转换 → 音频调度 → 播放输出
+    ↓         ↓         ↓         ↓         ↓         ↓
+  fetch    reader    leftover   PCM16→   schedule   Audio
+          .read()   处理       Float32   Float32   播放
+```
+
+### 一、如何获取pcm
+
+如果返回的是base64 编码的 PCM，可以直接使用sse的方式接收，把 base64→Uint8Array→Float32，然后排队播放。
+
+在当前环境下，后端返回的是分块传输的“裸”音频流：PCM16LE（16 位小端）、单声道、采样率 32000 Hz。因此，前端需要用二进制流读取（fetch + reader）,把每个 chunk 当作连续的 PCM 数据处理或边收边播。
+
+> ##### 为什么不使用axios？
+>
+> axios虽然也能通过设置`responseType: stream` 来支持流式请求，但是仅适用于node环境。
+> 你可能会问：axios不是也支持上传下载文件吗？那应该支持流式才对。
+> 其实axios的流式是伪流式，仍然等待完整响应后才返回：
+>
+> ```js
+> // axios 的行为
+> const response = await axios.get(url, { responseType: 'arraybuffer' });
+> // ↑ 这里会等待整个响应完成才返回
+> 
+> // fetch 的真正流式
+> const response = await fetch(url);
+> const reader = response.body.getReader();
+> // ↑ 这里可以立即开始读取数据块,可以边接收边处理
+> ```
+
+### 二、拿到pcm流后，如何处理并播放？
+
+#### 读取数据
+
+发起请求后，接受到的数据为`ReadableStream`，我们可以通过`ReadableStream`原型链上的`getReader()`方法来读取流数据。
+
+#### 数据对齐
+
+pcm音频数据格式为每个样本占两个字节，网络传输存在不完整性，可能返回的是单个字节，我们必须确保字节数为偶数：
+
+```js
+let leftover = new Uint8Array(0)
+const pump = async () => {
+  while (true) {
+    const { value, done } = await reader.read() // 读取数据
+    if (done) break
+    if (aborted || sessionId !== sessionCounter) break
+    if (!value || value.length === 0) continue
+
+    const merged = new Uint8Array(leftover.length + value.length) // 将上次残留的单字节合并到下一次数据
+    merged.set(leftover, 0)
+    merged.set(value, leftover.length)
+
+    const alignedLen = merged.length & ~1 // 确保字节对齐
+    const aligned = merged.subarray(0, alignedLen)
+    leftover = merged.subarray(alignedLen) // 保存剩余数据
+
+    if (aligned.length > 0) {
+      if (first) {
+        first = false
+        onFirstChunk?.() // 传入onFirstChunk，对播放状态进行处理
+      }
+      const f32 = pcm16ToFloat32(aligned)
+      scheduleFloat32(f32, sampleRate, jitterSeconds, sessionId)
+    }
+  }
+}
+```
+
+#### 格式转换
+
+拿到数据之后，接下来可以着手播放了，播放我们需要用到`Web Audio API`，但是`Web Audio API`只接收`Float32`格式的数据，因此需要做一个数据转换的操作：
+
+```ts
+function pcm16ToFloat32(u8: Uint8Array): Float32Array {
+  const sampleCount = (u8.byteLength / 2) | 0 // 计算样本数量
+  const out = new Float32Array(sampleCount) // 输出数组
+  const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength)
+  for (let i = 0; i < sampleCount; i++) {
+    // 读取16位有符号整数，转换为 -1.0 到 1.0 的浮点数
+    out[i] = Math.max(-1, Math.min(1, view.getInt16(i * 2, true) / 32768))
+  }
+  return out
+}
+```
+
+#### 音频调度
+
+在播放方式上，我们可以选择：
+
+| 方案                                | 优点                                                   | 缺点                                                  |
+| ----------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| AudioWorklet (现代推荐)             | 高性能，在主线程外运行<br />支持实时音频处理<br />     | 需要额外的AudioWorklet文件<br /> 浏览器兼容性要求较高 |
+| ScriptProcessorNode (已废弃)        |                                                        | 性能较差，延迟较高                                    |
+| HTMLAudioElement (传统方法)         | 简单易用<br />支持多种音频格式                         | 延迟较高，不适合实时流                                |
+| MediaStreamAudioDestination         | 可以获取MediaStream                                    | 主要用于录制或传输                                    |
+| GainNode增强的AudioBufferSourceNode | 支持音量控制<br />支持淡入淡出效果<br />保持低延迟特性 |                                                       |
+
+由于是实时播放，选择方案五：GainNode增强的AudioBufferSourceNode
+
+> 如果以后需要添加音频控制，音频可视化等功能，可以将pcm转为wav格式结合canvas实现，但是由于现在是实时播放，转为wav延迟会增加5-10倍，并且wav需要缓存完整的数据，内存占用大，暂时不考虑该方案。
+
+获取到的是流式的数据，为了首响快，不卡顿，我们把一小段 Float32 单声道音频样本，按“精确时间”排到 Web Audio 的时间轴上播放；并用全局指针确保片段“顺序、无重叠、平滑衔接”。
+
+实现方案：
+
+```ts
+function scheduleFloat32(
+  float32: Float32Array,
+  sampleRate: number,
+  jitterSeconds: number,
+  sessionId: number
+) {
+  const ctx = ensureAudioContext()
+  if (sessionId !== sessionCounter) return // 防止旧会话的音频继续播放
+  // 创建音频缓冲区,参数分别为：单声道，样本数量，采样率
+  const buffer = ctx.createBuffer(1, float32.length, sampleRate)
+  buffer.getChannelData(0).set(float32)
+      
+  // 创建音频源
+  const source = ctx.createBufferSource()
+  source.buffer = buffer // 绑定音频数据
+  if (!sharedGain) {
+    sharedGain = ctx.createGain()
+    sharedGain.gain.value = 1
+    sharedGain.connect(ctx.destination)
+  }
+  source.connect(sharedGain) // 连接到全局音量控制
+  activeSources.add(source) // 添加到活跃源集合，便于管理
+  // 设置播放完成回调, 自动清理播放完成的音频源
+  source.onended = () => {
+    try {
+      source.disconnect()
+    } catch {
+      //
+    }
+    activeSources.delete(source)
+  }
+  
+  const now = ctx.currentTime // Web Audio API 的当前时间
+  const minStart = now + Math.max(0.01, jitterSeconds) // 0.01: 最小延迟（10ms），防止立即播放,jitterSeconds: 抖动时间，防止音频重叠
+  const startAt = Math.max(minStart, scheduledPlayheadSec) // 实际开始时间
+  source.start(startAt) // 开始播放
+
+  scheduledPlayheadSec = startAt + buffer.duration // 将播放头位置更新为当前音频片段的结束时间
+}
+```
+
+其中`scheduledPlayheadSec`为全局变量，记录播放头位置，保证音频严格按顺序播放，无重叠。
+
+至此，我们已经能通过请求tts拿到pcm数据并播放了，接下来处理接收文本流，并请求tts。
+
+### 三、处理文本，分块请求tts
+
+由于文本流每次返回的文字块大小不一定，如果按每次文本流返回去请求，有可能会请求太频繁，但是如果等文本流返回完毕，如果文本很长，那又不符合我们的需求。因此，我们每次接受文字时，会设置一个最小最大长度，以此来对文字分块，并且对文字进行句子拆分，markdown清洗。
+
+```ts
+// 关键代码
+
+// 将当前缓冲区的内容发送到TTS队列，在SSE正常结束时，直接调用flush(true)强制输出
+const flush = useCallback(
+(force = false) => {
+  clearTimer()
+  const text = bufferRef.current.trim()
+  if (!text) return // 如果缓冲区为空，直接返回
+  if (!force && text.length < seg.minChars) return // 如果force=false且文本长度小于minChars，不输出（继续缓冲）
+  bufferRef.current = ''
+  ttsMgr.enqueue(text) // 如果满足条件，清空缓冲区并将文本加入TTS队列
+},
+[clearTimer, seg.minChars, ttsMgr]
+)
+
+// 设置一个定时器，在指定时间后尝试输出缓冲区，即超时强制输出
+const scheduleFlush = useCallback(() => {
+clearTimer()
+timerRef.current = window.setTimeout(() => {
+  flush(false)
+}, seg.flushMs) as unknown as number
+}, [clearTimer, flush, seg.flushMs])
+
+const handleIncomingText = useCallback(
+(delta: string) => {
+  if (!delta) return
+  const piece = normalizeText(delta) // markdown清洗
+  bufferRef.current += piece // 上次剩余文本和这次新增的文本也添加到缓冲区
+
+  if (bufferRef.current.length >= seg.maxChars) { // 超长裁剪后直接输出
+    const slice = bufferRef.current.slice(0, seg.maxChars)
+    bufferRef.current = bufferRef.current.slice(seg.maxChars)
+    ttsMgr.enqueue(slice)
+    scheduleFlush()
+    return
+  }
+
+  const parts = bufferRef.current.split(seg.punctuation) // 根据规则分块，例如遇到句号则为一个句子直接输出
+  if (parts.length > 1) {
+    const last = parts.pop() as string
+    const completed = parts.join('')
+    bufferRef.current = last
+    const text = completed.trim()
+    if (text) ttsMgr.enqueue(text)
+    scheduleFlush()
+    return
+  }
+
+  scheduleFlush()
+},
+[normalizeText, seg.maxChars, seg.punctuation, scheduleFlush, ttsMgr]
+)
+```
+
+
+
