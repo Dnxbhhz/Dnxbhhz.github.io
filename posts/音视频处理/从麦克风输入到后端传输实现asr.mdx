@@ -1,0 +1,182 @@
+---
+title: '从麦克风输入到后端传输实现asr'
+date: '2025-08-4'
+summary: '从麦克风输入到后端传输实现asr'
+---
+
+先说需求场景：websocket传输PCM数据，调用ASR服务，实现语音识别功能
+
+### SpeechRecognition
+
+在调用自有的服务进行语音识别之前，我们使用的是浏览器自带的`SpeechRecognition`API，它是一个浏览器原生的语音识别接口，允许网页应用将用户的语音转换为文本。
+
+| 优点                                                         | 缺点                            |
+| ------------------------------------------------------------ | ------------------------------- |
+| 浏览器原生支持：不需要额外的库或服务，直接使用浏览器内置的语音识别功能 | 需要 HTTPS 环境（本地开发除外） |
+| 实时转换：可以将用户的语音实时转换为文本                     | 需要用户授权麦克风权限          |
+| 多语言支持：支持多种语言的语音识别                           | 依赖网络连接（某些浏览器）      |
+| 跨平台：在支持 Web Speech API 的浏览器中都可以使用           | 浏览器支持程度不同              |
+
+优缺点很明显，如果在项目里运用，还是需要考虑用户的使用环境。例如：在Chrome浏览器中，需要科学上网才能使用该服务，Edge浏览器不影响；在开发环境可以正常访问，但是在非开发环境下：需要修改浏览器的设置，这里以谷歌浏览器为例：
+
+1. 地址栏输入：chrome://flags/
+2. 搜索：insecure origins treated as secure
+3. 添加你的HTTP地址：http://localhost:8000
+4. 重启浏览器
+
+因此，为了适配所有的用户环境，我们选择自己的ASR服务，当然，你可以选择一些市面上已有的服务，如科大讯飞，Google Cloud Speech-to-Text等等。
+
+### 自有ASR服务
+
+整体流程为
+
+```
+麦克风 → getUserMedia() → MediaStream
+    ↓
+AudioContext → MediaStreamAudioSourceNode
+    ↓
+AudioWorkletNode/ScriptProcessor → Float32Array
+    ↓
+重采样(可选) → 16000Hz Float32Array
+    ↓
+floatToPcm16() → Int16Array (PCM16)
+    ↓
+WebSocket/HTTP → ASR服务
+    ↓
+识别结果 → 文本输出
+```
+
+#### 一、请求麦克风权限
+
+一般不配置其他约束，只设置`audio: true`
+
+```ts
+const stream = await navigator.mediaDevices.getUserMedia({
+    audio: true
+})
+```
+
+#### 二、创建audioContext来处理音频数据
+
+> window.AudioContext是 Web Audio API 的入口类，用来创建“音频上下文”（音频引擎），在浏览器里以节点图的方式处理/合成/播放音频。
+
+```ts
+const AudioContextClass =
+window.AudioContext ||
+(window as unknown as { webkitAudioContext: typeof AudioContext })
+  .webkitAudioContext
+const audioContext = new AudioContextClass()
+```
+
+创建`AudioWorkletNode`来获取Float32Array（单声道） 音频数据
+
+```ts
+// public/pcm-processor.js
+class PCMProcessor extends AudioWorkletProcessor {
+  // 在 process(inputs) 里拿到输入通道的 Float32Array 音频数据，postMessage 回主线程。
+  process(inputs) {
+    const [input] = inputs
+    if (input && input[0] && input[0].length) {
+      // input[0] 是 Float32Array（单声道）
+      this.port.postMessage(input[0].slice(0))
+    }
+    return true
+  }
+}
+registerProcessor('pcm-processor', PCMProcessor)
+```
+
+获取到Float32Array之后，统一处理一块 Float32 音频：计算音量 -> 可选重叠 -> 重采样(浏览器默认48000，后端需要16000) -> PCM16(后端需要该格式的数据，也方便转为WAV) -> 回调/收集。
+
+```ts
+  const processAudioChunk = useCallback(
+    (inputBuffer: Float32Array, ctxSampleRate: number) => {
+      // 计算音量
+      const currentVolume = calculateVolume(inputBuffer)
+      setVolume(currentVolume)
+      onVolumeChange?.(currentVolume)
+
+      let processBuffer: Float32Array
+
+      if (useOverlap && overlapBufferRef.current) {
+        // 25% 重叠（按当前块长度计算）
+        const overlapSize = Math.floor(inputBuffer.length * 0.25)
+        const combinedLength =
+          overlapBufferRef.current.length + inputBuffer.length
+        const combined = new Float32Array(combinedLength)
+        combined.set(overlapBufferRef.current)
+        combined.set(inputBuffer, overlapBufferRef.current.length)
+        processBuffer = combined
+        // 保存重叠部分用于下次处理
+        overlapBufferRef.current = new Float32Array(
+          inputBuffer.slice(-overlapSize)
+        )
+      } else {
+        // 直接处理当前缓冲区
+        processBuffer = inputBuffer
+      }
+      // 重采样到目标采样率 16000
+      const resampled = resample(processBuffer, ctxSampleRate, sampleRate)
+      // 转换为 PCM16 格式
+      const pcm16 = floatToPcm16(resampled)
+      // 收集 PCM 数据
+      pcmChunksRef.current.push(new Int16Array(pcm16))
+      // 实时回调
+      const currentPcmData: PcmData = {
+        buffer: new Int16Array(pcm16),
+        sampleRate,
+        timestamp: Date.now()
+      }
+      onPcmData?.(currentPcmData)
+    },
+    [
+      calculateVolume,
+      onVolumeChange,
+      useOverlap,
+      resample,
+      sampleRate,
+      floatToPcm16,
+      onPcmData
+    ]
+  )
+```
+
+最后，我们通过gainNode来对录音链路静音监听，不把麦克风回放到扬声器，避免啸叫/回声。
+
+> 如果可以， 我们可以加上音量控制，这样做的好处是，只有人说话的时候才会收集数据，可以减少带宽和费用，避免把环境噪声当语音发给服务端。如果服务器端有做内置端点检测，直接全量上传也是可以的。
+>
+> ```ts
+> // VAD gating（基于音量的简单门控，带攻击/释放）
+> if (vadEnabled) {
+> const now = performance.now()
+> if (currentVolume >= vadThreshold) {
+>   // 达到阈值，记录首次超过时间，用于攻击时间判断
+>   if (vadFirstAboveTsRef.current == null) {
+>     vadFirstAboveTsRef.current = now
+>   }
+>   // 延长释放时间窗口
+>   vadActiveUntilRef.current = now + vadReleaseMs
+>   if (!voiceActiveRef.current) {
+>     const elapsed = now - (vadFirstAboveTsRef.current || now)
+>     if (elapsed >= vadAttackMs) {
+>       voiceActiveRef.current = true
+>       setIsVoiceActive(true)
+>     }
+>   }
+> } else {
+>   // 低于阈值，清空攻击计时；到期后退出激活
+>   vadFirstAboveTsRef.current = null
+>   if (voiceActiveRef.current && now > vadActiveUntilRef.current) {
+>     voiceActiveRef.current = false
+>     setIsVoiceActive(false)
+>   }
+> }
+> }
+> const shouldCollect = !vadEnabled || voiceActiveRef.current
+> if (!shouldCollect) {
+> return
+> }
+> ```
+>
+> 需要注意的是，对于阈值、攻击计时、释放时间的确定需要经过多次测试。如果始终把控不好数据，则可以交给后端判断。
+
