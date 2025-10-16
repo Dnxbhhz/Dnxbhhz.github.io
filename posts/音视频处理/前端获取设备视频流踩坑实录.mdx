@@ -1,0 +1,179 @@
+---
+title: '前端获取设备视频流踩坑实录'
+date: '2025-10-16'
+summary: '众所周知，当使用http访问设备摄像头、麦克风等，需要在浏览器中配置安全策略。除此之外，还会有其他的问题。'
+---
+
+### 前言
+
+众所周知，当使用http访问设备摄像头、麦克风等，需要在浏览器中配置安全策略。除此之外，还会有其他的问题。
+
+最近，博主遇到了这样一个问题，在本地开发时，可以正常访问摄像头和麦克风，在局域网内，其他用户通过IP访问我的开发环境，在配置了浏览器安全策略后，也可以访问麦克风摄像头。但是当项目上线时，在同样未配置证书的情况下，使用http访问前端，则无法访问摄像头，调用截图方法时却能正确调用，可以拿到当前视频帧，浏览器也没有任何报错。 
+
+> 本来是通过https访问的，但是由于后端未通过加密通道传输，项目也没有正式上线，只是处于demo状态，所以还是改为http访问。如果一定要通过https访问，那么访问接口的地址也必须是https/wss，否则属于混合内容，会被浏览器拦截。
+> 使用https的情况下，有两种解决方案：
+>
+> 1. 后端需要支持TLS握手并提供“可信证书 + 主体匹配”（证书的 SAN 需匹配域名/IP）。否则会变成 TLS/证书错误（如NET::ERR_CERT_AUTHORITY_INVALID）
+> 2. 在前端同源的网关/Ingress/Nginx 暴露一个 WSS 路径（同源同证书），再反向代理到后端。
+
+### 排除问题
+
+#### 一、检查元素大小是否被影响？
+
+通过devtools发现元素布局正常，大小无变化，未被遮挡。
+
+#### 二、没有正确设置 `autoplay` / `playsinline` 属性
+
+在一些浏览器中，尤其是移动端，如果没有 `autoplay（页面加载后“尝试”自动播放视频。）`、`muted（将音轨静音）`、`playsinline（允许在页面内联播放）` 属性，视频流会卡在“有流但不播放”的状态，导致黑屏但能截图。
+但是我全加了，排除
+
+#### 三、检查 CSP、安全头或者 iframe sandbox 限制
+
+如果视频是在 iframe 或某个带有 CSP 头的环境中（例如 `Content-Security-Policy: default-src 'self'`），可能媒体流被允许但渲染被限制。
+
+查看头部信息，未发现任何限制
+
+#### 四、video 还没进入播放状态
+
+在以上答案都排除后，发现有流但是未被播放（因为截图能拿到视频帧），考虑是video标签为正确绑定流。
+在控制台中打印video的状态：
+
+```js
+const video = document.querySelector('video');
+console.log(video.readyState, video.paused);
+```
+
+获得的结果：
+
+```js
+0 true
+```
+
+> 补充说明 readyState 的取值含义：
+>
+> | 值   | 含义              | 说明                           |
+> | ---- | ----------------- | ------------------------------ |
+> | 0    | HAVE_NOTHING      | 还没有任何关于视频的信息       |
+> | 1    | HAVE_METADATA     | 读取到了元数据（宽高、时长等） |
+> | 2    | HAVE_CURRENT_DATA | 有当前帧数据，但可能不足以播放 |
+> | 3    | HAVE_FUTURE_DATA  | 有未来帧，但可能不够流畅       |
+> | 4    | HAVE_ENOUGH_DATA  | 可以正常播放                   |
+>
+> 理想情况下，应该看到 `readyState === 4`，并且 `video.paused === false`。
+> 如果 `readyState` 长期卡在 2 或 3，而 `paused` 是 `true`，那就是 video 播放没有真正触发。这种情况下就算截图有帧，页面也会一直黑屏。
+
+也就是说，`srcObject` 并没有被正确赋值或者 video 元素还没在文档流中，或者被浏览器静默拦截。
+
+我之前的代码为：
+
+```ts
+useEffect(() => {
+  let isMounted = true
+  setIsLoading(true)
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false
+      })
+      if (!isMounted) return
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
+      }
+    } catch {
+      setError('无法访问摄像头，请检查权限')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  startCamera()
+  return () => {
+    isMounted = false
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+  }
+}, [])
+```
+
+首先考虑是否自动播放被拦截了，由于`await videoRef.current.play().catch(() => {})`catch块里没有任何处理，如果是被拦截了不会报错，我们加上错误处理后，发现并没有走到catch块了，证明并非是播放被拦截。
+
+查看整个代码逻辑，如果没有任何报错，srcObject也赋值了视频流。那就只有一个可能：video标签挂载时间比获取媒体流的时间要晚，尤其是在dom结构上，设置了loading状态结束后才渲染video标签，更能证明这一点。
+
+```jsx
+{isLoading ? (
+    <div className='text-white'>加载中...</div>
+  ) : error ? (
+    <div className='text-white gap-4 flex flex-col items-center'>
+      <SvgIcon iconName='Error' />
+      {error}
+    </div>
+  ) : (
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className='w-full h-full object-contain rounded-2xl'
+      />
+    </>
+  )}
+```
+
+但是为什么开发环境下可以正常访问呢？就是“时序竞态”问题：
+在生产环境里 getUserMedia 返回得比` <video> `挂载更早，首次调用发生在 videoRef 还为 null 时，绑定被丢失；开发环境因为 StrictMode/HMR 导致 effect 被再次执行或整体更慢，恰好补上了这次遗漏，所以看不出问题。
+按照我的理解，通过设置断点：
+
+```jsx
+useEffect(() => {
+  let isMounted = true
+  setIsLoading(true)
+  debugger // 1
+  const startCamera = async () => {
+    debugger // 2
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false
+      })
+      console.log(isLoading)
+      debugger // 3
+      setVideoId(videoId + 1)
+      if (!isMounted) return
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
+      }
+    } catch {
+      setError('无法访问摄像头，请检查权限')
+    } finally {
+      debugger //4
+      setIsLoading(false)
+    }
+  }
+  startCamera()
+  return () => {
+    debugger // 5
+    isMounted = false
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+  }
+}, [])
+```
+
+开发环境执行顺序为：
+
+1. 执行第一次useEffct，执行到debugger2处，遇到await挂起，effect返回。
+2. 执行第二次useEffct，依旧执行到debugger2处，遇到await挂起
+3. 等待第一次await恢复，执行到setLoading(false)处，video挂载。
+4. 等待第二次await恢复，执行到debugger3处，videoRef.current此时已有值，成功挂载视频流。
+
+如有错误请指正，非常感谢！
+
