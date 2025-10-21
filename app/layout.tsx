@@ -3,9 +3,15 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import Header from '@/app/components/Header'
-import Script from 'next/script'
 import BusuanziReporter from '@/components/BusuanziReporter'
 import { Suspense } from 'react'
+import BusuanziScript from '@/components/BusuanziScript'
+
+declare global {
+  interface Window {
+    Busuanzi?: { fetch: () => void }
+  }
+}
 import siteMetadata from '@/data/siteMetadata'
 
 const geistSans = Geist({
@@ -49,14 +55,7 @@ export default function RootLayout({
   const isProd = process.env.NODE_ENV === 'production'
   return (
     <html lang="en" suppressHydrationWarning={true} className="h-full">
-      <head>
-        {isProd && (
-          <Script
-            src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"
-            strategy="afterInteractive"
-          />
-        )}
-      </head>
+      <head>{isProd && <BusuanziScript />}</head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex h-full flex-col`}>
         <ThemeProvider

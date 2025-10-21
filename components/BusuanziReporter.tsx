@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 
 declare global {
   interface Window {
@@ -11,12 +11,15 @@ declare global {
 
 export default function BusuanziReporter() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const paramsString = searchParams ? searchParams.toString() : ''
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Busuanzi) {
       window.Busuanzi.fetch()
     }
-  }, [pathname])
+    // 监听路径与查询参数变化，确保开启 stats=1 时能立即刷新
+  }, [pathname, paramsString])
 
   return null
 }

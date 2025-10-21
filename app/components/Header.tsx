@@ -40,6 +40,13 @@ function OwnerStats({ children }: { children: React.ReactNode }) {
     setVisible(stored)
   }, [searchParams])
 
+  useEffect(() => {
+    if (!visible) return
+    if (typeof window !== 'undefined' && window.Busuanzi) {
+      window.Busuanzi.fetch()
+    }
+  }, [visible])
+
   if (!visible) return null
   return <>{children}</>
 }
@@ -87,8 +94,8 @@ export default function Header() {
         <Suspense fallback={null}>
           <OwnerStats>
             <div style={{ fontSize: 12, opacity: 0.7 }}>
-              访客数：<span id="busuanzi_value_uv">...</span> ｜ 浏览量：
-              <span id="busuanzi_value_pv">...</span>
+              访客数：<span id="busuanzi_value_site_uv">...</span> ｜ 浏览量：
+              <span id="busuanzi_value_site_pv">...</span>
             </div>
           </OwnerStats>
         </Suspense>
