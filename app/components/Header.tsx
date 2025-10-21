@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { ModeToggle } from '@/components/mode-toggle'
 import { GithubIcon, type IconProps } from '@/components/icons/GithubIcon'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 function OwnerStats({ children }: { children: React.ReactNode }) {
@@ -84,12 +84,14 @@ export default function Header() {
             {siteMetadata.headerTitle}
           </AnimatedGradientText>
         </Link>
-        <OwnerStats>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
-            访客数：<span id="busuanzi_value_uv">...</span> ｜ 浏览量：
-            <span id="busuanzi_value_pv">...</span>
-          </div>
-        </OwnerStats>
+        <Suspense fallback={null}>
+          <OwnerStats>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              访客数：<span id="busuanzi_value_uv">...</span> ｜ 浏览量：
+              <span id="busuanzi_value_pv">...</span>
+            </div>
+          </OwnerStats>
+        </Suspense>
       </div>
 
       <TooltipProvider>
