@@ -16,6 +16,33 @@ import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { ModeToggle } from '@/components/mode-toggle'
 import { GithubIcon, type IconProps } from '@/components/icons/GithubIcon'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+
+function OwnerStats({ children }: { children: React.ReactNode }) {
+  const [visible, setVisible] = useState(false)
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const flag = searchParams.get('stats')
+    if (typeof window === 'undefined') return
+    if (flag === '1') {
+      localStorage.setItem('showStats', '1')
+      setVisible(true)
+      return
+    }
+    if (flag === '0') {
+      localStorage.removeItem('showStats')
+      setVisible(false)
+      return
+    }
+    const stored = localStorage.getItem('showStats') === '1'
+    setVisible(stored)
+  }, [searchParams])
+
+  if (!visible) return null
+  return <>{children}</>
+}
 
 export default function Header() {
   const headerClass =
@@ -47,15 +74,23 @@ export default function Header() {
   }
   return (
     <header className={headerClass}>
-      <Link href="/" aria-label={siteMetadata.headerTitle}>
-        <AnimatedGradientText
-          speed={1}
-          colorFrom="oklch(71.4% 0.203 305.504)"
-          colorTo="#5046e6"
-          className="text-3xl font-semibold tracking-tight">
-          {siteMetadata.headerTitle}
-        </AnimatedGradientText>
-      </Link>
+      <div>
+        <Link href="/" aria-label={siteMetadata.headerTitle}>
+          <AnimatedGradientText
+            speed={1}
+            colorFrom="oklch(71.4% 0.203 305.504)"
+            colorTo="#5046e6"
+            className="text-3xl font-semibold tracking-tight">
+            {siteMetadata.headerTitle}
+          </AnimatedGradientText>
+        </Link>
+        <OwnerStats>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            访客数：<span id="busuanzi_value_uv">...</span> ｜ 浏览量：
+            <span id="busuanzi_value_pv">...</span>
+          </div>
+        </OwnerStats>
+      </div>
 
       <TooltipProvider>
         <Dock direction="middle">
