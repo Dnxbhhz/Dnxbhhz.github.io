@@ -2,6 +2,7 @@
 title: '视频转码解码播放原理'
 date: '2025-08-2'
 summary: '快速了解视频的基础信息和播放原理'
+
 ---
 
 ### 视频文件结构
@@ -10,14 +11,14 @@ summary: '快速了解视频的基础信息和播放原理'
 
 #### 主流视频封装格式（文件扩展名）
 
-| 格式                     | 全称                       | 是否浏览器原生支持     | 特点与说明                             |
-| ------------------------ | -------------------------- | ---------------------- | -------------------------------------- |
-| `.mp4`                   | MPEG-4                     | 支持最广泛             | **首选格式**，兼容性好，适合网页播放   |
-| `.webm`                  | Web Media                  | Chrome / Firefox 支持  | Google 推出，体积小，适合 Web 用途     |
-| `.ogg` / `.ogv`          | Ogg Theora                 | 部分支持（Firefox 好） | 开源格式，支持不如 MP4                 |
-| `.m3u8`                  | HLS（HTTP Live Streaming） | 需 `hls.js` 支持       | Apple 开发的**流媒体格式**，可边播边看 |
-| `.flv`                   | Flash Video                | 需 `flv.js` 支持       | 老旧格式，适用于直播回放等后端推流系统 |
-| `.avi` / `.mov` / `.wmv` | -                          | 不推荐网页播放         | 桌面播放器常见格式，不适合前端网页     |
+| 格式                     | 全称                       | 是否浏览器原生支持     | 特点与说明                                                   |
+| ------------------------ | -------------------------- | ---------------------- | ------------------------------------------------------------ |
+| `.mp4`                   | MPEG-4                     | 支持最广泛             | **首选格式**，兼容性好，适合网页播放                         |
+| `.webm`                  | Web Media                  | Chrome / Firefox 支持  | Google 推出，体积小，适合 Web 用途                           |
+| `.ogg` / `.ogv`          | Ogg Theora                 | 部分支持（Firefox 好） | 开源格式，支持不如 MP4                                       |
+| `.m3u8`                  | HLS（HTTP Live Streaming） | 需 `hls.js` 支持       | Apple 开发的**流媒体格式**，可边播边看                       |
+| `.flv`                   | Flash Video                | 需 `flv.js` 支持       | 老旧格式，适用于直播回放等后端推流系统web端 `video`标签是不支持flv 文件进行播放的。需要借助浏览器提供的`mediaSource` 或者`webcodec` 或者`wasm` 来解封装 flv 文件。 |
+| `.avi` / `.mov` / `.wmv` | -                          | 不推荐网页播放         | 桌面播放器常见格式，不适合前端网页                           |
 
 对于一些流媒体协议，其实也是封装格式，例如 rtmp，rtsp,http-flv 等，后续会详细介绍。
 
@@ -53,12 +54,12 @@ summary: '快速了解视频的基础信息和播放原理'
 
 #### 常见视频编码格式（压缩算法）
 
-| 编码          | 名称                                 | 特点                             |
-| ------------- | ------------------------------------ | -------------------------------- |
-| `H.264`       | AVC（Advanced Video Coding）         | 最常见、兼容性最佳、支持硬解码   |
-| `H.265`       | HEVC（High Efficiency Video Coding） | 新一代压缩率高，但浏览器支持有限 |
-| `VP8` / `VP9` | Google 开源                          | 用于 `.webm` 格式，压缩率高      |
-| `AV1`         | 新一代开源高压缩率编码               | Chrome / Firefox 支持，未来趋势  |
+| 编码          | 名称                                 | 特点                                                        |
+| ------------- | ------------------------------------ | ----------------------------------------------------------- |
+| `H.264`       | AVC（Advanced Video Coding）         | 最常见、兼容性最佳、支持硬解码                              |
+| `H.265`       | HEVC（High Efficiency Video Coding） | 新一代压缩率高，但浏览器支持有限，h265 格式视频需要硬件支持 |
+| `VP8` / `VP9` | Google 开源                          | 用于 `.webm` 格式，压缩率高                                 |
+| `AV1`         | 新一代开源高压缩率编码               | Chrome / Firefox 支持，未来趋势                             |
 
 > 浏览器能播放一部分 mp4 文件，是因为浏览器的音视频解码器是内嵌的，只能解压缩几种固定的编码格式，
 > 补充说明：每一帧图像，音频采样本身也有自己的格式，图像会有 YUV，RGB 等格式，音频采样会有 float 等样本格式，但一般这些格式处理过程在音视频处理中是不需要特别关心的，因为编码解码时会自动处理这些。
@@ -97,3 +98,111 @@ DTS 和 PTS 不一定是相等的，如 H254 的 B 帧需要滞后解码，DTS �
 视频文件，直播流转码成高清流程的过程其实就是在解封装，解码后，对每一帧图像，音频采样进行处理，如改变分辨率，采样率等，之后再重新编码，重新封装就可以了。
 
 如果仅仅是想把视频文件从 mp4 变成 flv 文件，而不改变视频分辨率，编码格式的话，可以解封装后直接重新封装。直播流转码播放也是一样的，只不过封装的格式不一样，但是它们的编码可以同为一样的。
+
+### 浏览器播放视频关键组件
+
+#### 一、MediaSource Extensions（MSE）
+
+**MediaSource Extensions（媒体源扩展）** 是一种浏览器 API，允许开发者通过 JavaScript **动态控制视频数据流**，将数据“喂给” `<video>` 元素。
+
+通俗讲：有了 MSE，前端不再只能播放一个固定的 URL，而是可以边下载、边拼接、边播放。
+
+##### 工作原理
+
+MSE 为 `<video>` 元素创建一个可编程的数据源：
+
+1. 创建一个 `MediaSource` 对象；
+2. 向其中添加一个或多个 `SourceBuffer`（视频轨 / 音频轨）；
+3. 将网络请求到的二进制片段（如 MP4 分片）喂进去；
+4. 浏览器负责缓冲、解码、播放
+
+##### 典型用途
+
+- HLS（`.m3u8`）和 MPEG-DASH（`.mpd`）流媒体播放
+- 视频广告拼接、分段预加载
+- 自定义播放器（如 Bilibili、YouTube、Netflix 的前端部分）
+
+#### 二、WebCodecs API
+
+**WebCodecs API** 是浏览器提供的**底层音视频编解码接口**。
+它允许开发者绕过 `<video>` 标签，**直接访问解码后的帧数据（VideoFrame）或音频数据（AudioData）**。
+简单来说，WebCodecs 就是“浏览器内置的 FFmpeg 解码层”，给你更底层的控制能力。
+
+##### 工作原理
+
+1. 使用 `VideoDecoder` 或 `AudioDecoder` 解码媒体数据；
+2. 解码后的帧以 `VideoFrame` 或 `AudioData` 对象形式返回；
+3. 你可以将帧绘制到 `<canvas>`，或送入 `WebGL` / `WebGPU`；
+4. 也可以用 `VideoEncoder` 重新压缩输出。
+
+#### 三、Web Audio API
+
+**Web Audio API** 是浏览器提供的一个**高性能音频处理框架**。
+ 它允许开发者在前端进行音频的：
+
+- 解码
+- 播放
+- 混音
+- 滤波
+- 音量包络 / 特效控制
+
+##### 工作原理
+
+Web Audio 以“**节点（Node）**”为核心，每个节点负责一种音频操作（如播放、滤波、音量调节），通过链式连接构建音频管线：
+
+```
+AudioBufferSourceNode → GainNode → BiquadFilterNode → AudioDestinationNode
+```
+
+#### 四、Hardware Acceleration（硬件加速）
+
+视频解码是非常消耗 CPU 的操作。
+ **硬件加速（Hardware Acceleration）** 是指让 GPU 或专用的媒体解码芯片（如 Intel QuickSync、NVIDIA NVDEC）代替 CPU 完成这些计算。
+
+##### 工作原理
+
+浏览器在检测到系统支持硬件加速时，会：
+
+1. 将视频帧的解码任务交给 GPU/硬件解码器；
+2. GPU 直接输出像素数据到渲染管线；
+3. 避免 CPU 解码再上传 GPU 的性能损耗。
+
+#### 五、WASM (WebAssembly)
+
+WASM 并不是浏览器内置的视频播放 API，而是一个**高性能计算环境**，它让你能在浏览器中运行 C/C++/Rust 等编译后的代码。
+
+##### 使用场景
+
+###### 自定义解码器
+
+- 浏览器原生只支持部分格式（如 H.264、VP9、AV1）。
+- 通过编译 FFmpeg 到 WASM，可以解码更多格式（如 H.265/HEVC、AAC、FLAC）。
+
+典型项目：`ffmpeg.wasm`、`h265.js`。
+
+###### 自定义播放器内核
+
+- 结合 MSE + WASM，可以实现自定义的流媒体播放器内核。
+- 例如 bilibili 的 flv.js、hls.js 就用到了这种模式（虽然它们主要用 JS，但后续很多播放器都引入 WASM 加速）。
+
+###### 视频特效 / 实时处理
+
+- WASM 结合 WebCodecs 可直接对视频帧进行操作。
+- 应用：实时滤镜、人脸识别、帧差分析、视频美化。
+
+######  视频转码 / 截帧 / 分析
+
+可直接在浏览器执行 FFmpeg 的命令，如：
+
+```bash
+ffmpeg -i input.mp4 -ss 00:00:10 -frames:v 1 output.jpg
+```
+
+在网页端即可完成视频剪切、截图、音频提取等操作。
+
+### 前端可以使用的一些播放工具
+
+1. Video标签 浏览器内置的播放器组件，可以通过 URL 加载视频文件、根据 MIME 类型识别封装格式、自动解复用（Demux）和解码（Decode）、渲染到画面（由 GPU 或 CPU 完成）
+2. [Jessibuca](http://jessibuca.monibuca.com/) 基于MediaSource/Webcodec/ WebAssembly(wasm)实现的纯JavaScript直播播放器。支持ws-raw、http(ws)-flv、hls、webTransport、webrtc（pro版）、http(ws)-fmp4、http(ws)-h264、http(ws)-h265多种播放格式。
+3. [ZLMRTCClient.js](https://github.com/ZLMediaKit/ZLMRTCClient.js) javscript webrtc client sdk for ZLMediakit,用于播放webrtc
+
